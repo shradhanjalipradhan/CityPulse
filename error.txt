@@ -1,0 +1,41 @@
+The HuggingFace Space is still showing the old error 
+"No module named 'numpy._core'" — Models loaded: 0/8.
+
+The requirements.txt fix was not pushed yet. Do this now:
+
+1. Check what is currently in huggingface_space/requirements.txt
+
+2. Update it to exactly this:
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+torch==2.4.0
+numpy==2.0.0
+scikit-learn==1.3.2
+pydantic==2.5.0
+
+3. The scaler .pkl files were saved with a newer numpy locally.
+   Resave all 8 scalers in a numpy-compatible way by running 
+   this script:
+   
+   import pickle, os, numpy as np
+   folder = "models/saved_models"
+   for f in os.listdir(folder):
+       if f.endswith("_scaler.pkl"):
+           with open(os.path.join(folder, f), "rb") as fp:
+               scaler = pickle.load(fp)
+           with open(os.path.join(folder, f), "wb") as fp:
+               pickle.dump(scaler, fp, protocol=2)
+   print("All scalers resaved with protocol 2")
+
+4. Copy updated scalers to huggingface_space/models/
+   Copy-Item models/saved_models\*_scaler.pkl huggingface_space\models\
+   Copy-Item models/saved_models\*_lstm.pt huggingface_space\models\
+   Copy-Item models/saved_models\*_threshold.json huggingface_space\models\
+
+5. Push everything to HuggingFace:
+   cd huggingface_space
+   git add .
+   git commit -m "Fix numpy compatibility and resave scalers"
+   git push
+
+6. Print: "Pushed to HuggingFace — wait 3 minutes then check logs"

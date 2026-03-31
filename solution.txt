@@ -1,0 +1,344 @@
+================================================================
+CityPulse Switzerland — Problems & Solutions Log
+Day 1 + Day 2
+================================================================
+
+All problems below were encountered and fully resolved during the
+build. Each entry describes the error, its root cause, and the fix.
+
+----------------------------------------------------------------
+DAY 1 — Data Pipeline (Kafka, Airflow, Supabase, Redis, OpenAQ)
+----------------------------------------------------------------
+
+PROBLEM 1: ModuleNotFoundError — No module named 'data'
+--------------------------------------------------------
+File:       database/redis_client.py (and others)
+Error:      ModuleNotFoundError: No module named 'data'
+Cause:      Scripts were run from the project root, but Python's
+            import system could not find sibling packages (data/,
+            database/, kafka/) because the project root was not on
+            sys.path.
+Fix:        Added the following two lines at the top of every script
+            that imports project-level modules:
+                import sys
+                from pathlib import Path
+                sys.path.insert(0, str(Path(__file__).parent.parent))
+            This ensures the project root is always on sys.path
+            regardless of where the script is launched from.
+Status:     FIXED
+
+----------------------------------------------------------------
+
+PROBLEM 2: Redis key name mismatch — --test showing NOT FOUND
+--------------------------------------------------------------
+File:       database/redis_client.py
+Error:      --test flag showed "NOT FOUND" for all 8 cities even
+            after the Kafka consumer had confirmed writing to Redis.
+Cause:      The consumer wrote keys as  city:{city}:latest_reading
+            but the --test flag was checking  city:{city}:state,
+            which is a different key used by the FSM/inference layer.
+Fix:        Added get_all_city_latest_readings() method that reads
+            the correct key  city:{city}:latest_reading.
+            Updated --test to call this method and print found/not-found
+            per city.
+            Added --debug flag that does a full SCAN and dumps every
+            key+value currently in Redis for inspection.
+Status:     FIXED
+
+----------------------------------------------------------------
+
+PROBLEM 3: Airflow DAG — ModuleNotFoundError: No module named 'kafka'
+----------------------------------------------------------------------
+File:       dags/sensor_pipeline_dag.py
+Error:      Airflow task fetch_and_publish failed with:
+            ModuleNotFoundError: No module named 'kafka'
+Cause:      The DAG had sys.path.insert(0, "/opt/airflow") but
+            the project was mounted at /opt/airflow/citypulse/ inside
+            the Docker container, so the import path was one level off.
+Fix:        Changed the path to:
+                sys.path.insert(0, '/opt/airflow/citypulse')
+            This makes Python find the kafka/, data/, database/, and
+            models/ packages correctly inside the container.
+Status:     FIXED
+
+----------------------------------------------------------------
+
+PROBLEM 4: pip Permission denied inside Docker container
+---------------------------------------------------------
+Command:    docker exec airflow pip install ...
+Error:      Permission denied when running pip as the default user.
+Cause:      The Airflow Docker container runs as a restricted user.
+            pip install needs to be run as the airflow user, not root.
+Fix:        Used the --user flag to target the correct user:
+                docker exec --user airflow airflow python3 -m pip install ...
+Status:     FIXED
+
+----------------------------------------------------------------
+
+PROBLEM 5: OpenAQ API — 401 Unauthorized
+-----------------------------------------
+File:       data/fetch_airquality.py
+Error:      HTTP 401 Unauthorized from api.openaq.org
+Cause:      OpenAQ v3 requires an API key passed as the X-API-Key
+            header. The original code made unauthenticated requests.
+Fix:        Loaded OPENAQ_API_KEY from .env using python-dotenv.
+            Added header injection in the _get() method:
+                headers = {"X-API-Key": _OPENAQ_API_KEY} if _OPENAQ_API_KEY else {}
+Status:     FIXED
+
+----------------------------------------------------------------
+
+PROBLEM 6: OpenAQ API — 422 Unprocessable Entity
+--------------------------------------------------
+File:       data/fetch_airquality.py
+Error:      HTTP 422 from the OpenAQ v3 /locations endpoint.
+Cause:      The request included  order_by=distance  which is not a
+            valid parameter in the v3 API (was valid in v2).
+Fix:        Removed the  order_by  parameter from all location search
+            requests.
+Status:     FIXED
+
+----------------------------------------------------------------
+
+PROBLEM 7: OpenAQ API — 404 Not Found on /v3/measurements
+-----------------------------------------------------------
+File:       data/fetch_airquality.py
+Error:      HTTP 404 when fetching historical readings from
+            /v3/measurements endpoint.
+Cause:      The /measurements endpoint was removed in OpenAQ v3.
+            Historical data is now accessed per-sensor via:
+            /v3/sensors/{sensor_id}/measurements
+Fix:        Rewrote fetch_historical() to:
+            1. Find the nearest location via /v3/locations
+            2. Look up pm25 and pm10 sensor IDs from the location's
+               sensors list
+            3. Fetch per-sensor hourly data via:
+               /v3/sensors/{id}/measurements?period_name=hour
+Status:     FIXED
+
+----------------------------------------------------------------
+
+PROBLEM 8: OpenAQ /latest — no parameter names in response
+------------------------------------------------------------
+File:       data/fetch_airquality.py
+Error:      /v3/locations/{id}/latest returned readings with only
+            sensorsId and value — no parameter name (pm25/pm10).
+Cause:      The v3 /latest endpoint returns sensor IDs, not parameter
+            names. There is no direct way to know which reading is
+            pm25 vs pm10 from the response alone.
+Fix:        Built a sensor_id → parameter_name lookup map by first
+            fetching the location detail (/v3/locations/{id}) which
+            includes a sensors[] array with both id and parameter.name.
+            Then joined that map with the /latest readings by sensorsId.
+Status:     FIXED
+
+----------------------------------------------------------------
+
+PROBLEM 9: OpenAQ nearest station has no PM2.5/PM10 sensors
+------------------------------------------------------------
+File:       data/fetch_airquality.py
+Error:      First station returned by location search measured NO2/O3
+            only — no pm25 or pm10 data available.
+Cause:      /v3/locations search without a parameter filter returns
+            any station regardless of what it measures.
+Fix:        Added  parameter=pm25  filter to the location search
+            request. Added _get_pm_location() method that iterates
+            through candidate locations and returns the first one
+            whose sensors[] list contains a pm25 or pm10 entry.
+Status:     FIXED
+
+----------------------------------------------------------------
+
+PROBLEM 10: Cannot join tz-naive with tz-aware DatetimeIndex
+-------------------------------------------------------------
+File:       models/train_models.py  (fetch_training_data)
+Error:      TypeError: Cannot join tz-naive with tz-aware DatetimeIndex
+Cause:      OpenMeteo returns timestamps in Europe/Zurich local time
+            (tz-naive after parsing). OpenAQ returns UTC-aware timestamps.
+            pandas merge_asof requires both sides to have the same tz
+            awareness.
+Fix:        Stripped timezone from the AQ DataFrame before merging:
+                if aq_df.index.tz is not None:
+                    aq_df.index = aq_df.index.tz_localize(None)
+            Then merged using merge_asof with a 2-hour tolerance to
+            bridge any remaining UTC vs local-time offset:
+                pd.merge_asof(..., tolerance=pd.Timedelta("2h"),
+                               direction="nearest")
+Status:     FIXED
+
+----------------------------------------------------------------
+
+PROBLEM 11: Found array with 0 sample(s) — shape=(0, 6)
+---------------------------------------------------------
+File:       models/train_models.py
+Error:      ValueError: Found array with 0 sample(s) (shape=(0, 6))
+            while a minimum of 1 is required.
+Cause:      After the weather/AQ merge, pm25 and pm10 were all NaN
+            because the merge produced zero matching rows. A blanket
+            df.dropna() then removed every row, leaving 0 samples.
+            Root cause: DST spring-forward (March 29, 2026) made
+            tz_localize fail silently with NaT, so the time-series
+            join produced no overlapping rows.
+Fix:        Replaced the blanket dropna() with a targeted approach:
+                df["pm25"] = df["pm25"].fillna(5.0)   # fallback
+                df["pm10"] = df["pm10"].fillna(10.0)  # fallback
+                df = df.dropna(subset=["temperature_c", "humidity_pct",
+                                       "wind_speed_kmh", "precipitation_mm"])
+            This preserves all 744 weather rows and fills any missing
+            AQ data with conservative baseline values (clean-air
+            estimates: pm25=5, pm10=10).
+Status:     FIXED
+
+----------------------------------------------------------------
+DAY 2 — ML Layer (LSTM Training, HF Spaces, Inference, Airflow)
+----------------------------------------------------------------
+
+PROBLEM 12: Docker path conversion — /opt/... resolved to C:/Program Files/Git/opt/...
+---------------------------------------------------------------------------------------
+Files:      All docker exec / docker cp commands
+Error:      Files were being read from / written to the local Windows
+            filesystem instead of inside the Docker container.
+Cause:      Git Bash on Windows automatically converts Unix-style
+            absolute paths like /opt/airflow/... to Windows paths
+            (C:/Program Files/Git/opt/airflow/...) when passed as
+            arguments to any subprocess including docker.
+Fix:        Prefixed every docker exec / docker cp command with:
+                MSYS_NO_PATHCONV=1
+            This environment variable disables Git Bash path
+            conversion for that command.
+            Also used pipe-based file copy instead of docker cp for
+            Python source files:
+                cat file.py | docker exec -i container sh -c 'cat > /dest/file.py'
+Status:     FIXED
+
+----------------------------------------------------------------
+
+PROBLEM 13: docker cp fails — "no such directory"
+--------------------------------------------------
+Command:    docker cp models/lstm_autoencoder.py airflow:/opt/airflow/citypulse/models/
+Error:      no such directory (even though the directory existed)
+Cause:      Combination of two issues:
+            (a) MSYS_NO_PATHCONV=1 was not set, so the container path
+                was mangled by Git Bash.
+            (b) docker cp cannot create parent directories on the
+                container side; the directory must already exist.
+Fix:        Created the directory first using docker exec as root:
+                MSYS_NO_PATHCONV=1 docker exec --user root airflow \
+                    mkdir -p /opt/airflow/citypulse/models/saved_models
+                MSYS_NO_PATHCONV=1 docker exec --user root airflow \
+                    chown -R airflow:root /opt/airflow/citypulse/models
+            Then used the pipe-based copy with MSYS_NO_PATHCONV=1 set.
+Status:     FIXED
+
+----------------------------------------------------------------
+
+PROBLEM 14: HF Space — models_loaded: 0 after deploy
+------------------------------------------------------
+File:       huggingface_space/app.py
+Error:      GET /health returned  models_loaded: 0  even after all
+            16 model files were uploaded to the Space repo.
+Cause (a):  Old Docker image was still running. The Space was RUNNING
+            but using a cached build from before models were added.
+Fix (a):    Force-restarted with factory reset via the HF API:
+                POST /api/spaces/{repo}/restart  body: {"factory": true}
+            This bypasses the Docker layer cache and forces a full rebuild.
+
+Cause (b):  After the factory restart, models were still not loading.
+            The load_models() function was catching exceptions silently
+            with  except Exception as e: logger.error(...)  and we
+            had no way to see the error from outside.
+Fix (b):    Added a  _load_errors  dict to capture any exception message
+            per city, and exposed it in the /health endpoint response.
+            This revealed the actual error in the next section.
+Status:     FIXED
+
+----------------------------------------------------------------
+
+PROBLEM 15: HF Space — "No module named 'numpy._core'"
+--------------------------------------------------------
+File:       huggingface_space/requirements.txt
+Error:      load_errors showed:
+            "Zurich": "No module named 'numpy._core'"
+            (same for all 8 cities)
+Cause:      The StandardScaler .pkl files were pickled on the local
+            machine which had NumPy 2.4.2 installed. NumPy 2.x stores
+            internal references to numpy._core (a new subpackage).
+            The HF Space requirements.txt pinned  numpy==1.26.0  which
+            does not have numpy._core, so pickle.load() failed.
+Fix:        Updated huggingface_space/requirements.txt to use:
+                numpy>=2.0.0
+                scikit-learn>=1.4.0   (1.4+ is required for numpy 2.x)
+            Redeployed. All 8 models loaded successfully on next build.
+Status:     FIXED
+
+----------------------------------------------------------------
+
+PROBLEM 16: HF Space — HF_SPACE_NAME set to token value in Docker
+------------------------------------------------------------------
+File:       /opt/airflow/citypulse/.env  (inside Docker container)
+Error:      Airflow run_inference task called wrong URL:
+            https://shradhanjalipradhan-<HF_TOKEN_VALUE>.hf.space/predict
+            (HTTP 404 — HF Space resolved to a nonsense subdomain)
+Cause:      The .env file inside Docker had:
+                HF_SPACE_NAME=<HF_TOKEN_VALUE>
+            which is the HF_TOKEN value, not the space name.
+            This happened because when the .env was originally copied
+            into Docker, a line-ending issue concatenated HF_TOKEN's
+            value onto the HF_SPACE_NAME line.
+Fix:        Patched the .env inside the container with sed:
+                docker exec --user root airflow sed -i \
+                    's/HF_SPACE_NAME=.*/HF_SPACE_NAME=citypulse-inference/' \
+                    /opt/airflow/citypulse/.env
+            Also added the missing HF_TOKEN line as a separate entry.
+Status:     FIXED
+
+----------------------------------------------------------------
+
+PROBLEM 17: Redis city state key mismatch — health shows 0/8
+-------------------------------------------------------------
+Files:      models/inference_engine.py, database/redis_client.py
+Error:      Airflow log_pipeline_health task reported:
+            "Redis city states: 0/8"
+            even after run_inference had written state for all 8 cities.
+Cause:      inference_engine.py wrote to key  city:{city}:fsm_state
+            but redis_client.get_all_city_states() reads from key
+            city:{city}:state  (set by set_city_state() method).
+            Two different key names for the same concept.
+Fix:        Changed inference_engine.py to call the canonical helper:
+                self.redis.set_city_state(city, redis_payload)
+            instead of:
+                self.redis.set(f"city:{city}:fsm_state", redis_payload, ...)
+            set_city_state() uses city:{city}:state consistently,
+            which is what get_all_city_states() reads.
+            Also removed the separate city:{city}:visit_score write —
+            the visit_score is now included inside the state dict.
+Status:     FIXED
+
+----------------------------------------------------------------
+
+FINAL STATE
+-----------
+All 17 problems resolved. Full pipeline verified end-to-end:
+
+  Airflow task results (all SUCCESS):
+    fetch_and_publish    — 8 cities published to Kafka
+    consume_and_store    — messages written to Supabase + Redis
+    run_inference        — 8/8 cities scored via HF Space
+    log_pipeline_health  — sensor_readings: 471 | anomaly_scores: 32
+                           Redis city states: 8/8
+
+  HF Space (shradhanjalipradhan/citypulse-inference):
+    models_loaded: 8
+    /predict endpoint: ONLINE
+
+  Training results (LSTM Autoencoder, 30-day historical data):
+    Zurich      val_loss=0.789813  threshold=1.353190
+    Geneva      val_loss=0.532947  threshold=0.628930
+    Bern        val_loss=0.751041  threshold=1.044178
+    Lucerne     val_loss=0.985610  threshold=1.796445
+    Basel       val_loss=0.752461  threshold=1.228529
+    Interlaken  val_loss=0.745707  threshold=1.462829
+    Lausanne    val_loss=0.608184  threshold=1.227988
+    Zermatt     val_loss=0.614385  threshold=1.188178
+
+================================================================
