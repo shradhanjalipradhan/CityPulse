@@ -1,6 +1,6 @@
 """
 gauge_chart.py — Plotly Indicator gauge for the Visit Score (0-100).
-Color-coded green / amber / orange / red by score range.
+Dark theme with gradient steps and glowing needle.
 """
 
 import plotly.graph_objects as go
@@ -8,12 +8,12 @@ import plotly.graph_objects as go
 
 def score_color(score: int) -> str:
     if score >= 80:
-        return "#2ECC71"
+        return "#00FF88"
     elif score >= 60:
-        return "#F39C12"
+        return "#FFB800"
     elif score >= 40:
-        return "#E67E22"
-    return "#E74C3C"
+        return "#FF6B35"
+    return "#FF3366"
 
 
 def score_label(score: int) -> str:
@@ -27,35 +27,43 @@ def score_label(score: int) -> str:
 
 
 def render_gauge(score: int, city: str) -> go.Figure:
-    """Renders a 0-100 visit score gauge for a city."""
+    """Renders a dark-themed 0-100 visit score gauge."""
     color = score_color(score)
     fig = go.Figure(go.Indicator(
         mode="gauge+number",
         value=score,
-        title={"text": f"{city.upper()} VISIT SCORE", "font": {"size": 18, "color": "#262730"}},
-        number={"font": {"size": 64, "color": color}, "suffix": ""},
+        title={
+            "text": f"{city.upper()} VISIT SCORE",
+            "font": {"size": 18, "color": "#E8EAF0"},
+        },
+        number={"font": {"size": 72, "color": color}, "suffix": ""},
         gauge={
-            "axis": {"range": [0, 100], "tickwidth": 1, "tickcolor": "#888"},
-            "bar": {"color": color, "thickness": 0.25},
-            "bgcolor": "white",
-            "borderwidth": 2,
-            "bordercolor": "#E0E0E0",
+            "axis": {
+                "range": [0, 100],
+                "tickwidth": 1,
+                "tickcolor": "#2A3550",
+                "tickfont": {"color": "#8892A4"},
+            },
+            "bar": {"color": color, "thickness": 0.28},
+            "bgcolor": "#141B2D",
+            "borderwidth": 0,
             "steps": [
-                {"range": [0,  39], "color": "#FADBD8"},
-                {"range": [40, 59], "color": "#FAE5D3"},
-                {"range": [60, 79], "color": "#FDEBD0"},
-                {"range": [80, 100], "color": "#D5F5E3"},
+                {"range": [0,  39], "color": "#3D0A1A"},
+                {"range": [40, 59], "color": "#2D1500"},
+                {"range": [60, 79], "color": "#2D2200"},
+                {"range": [80, 100], "color": "#003D1A"},
             ],
             "threshold": {
-                "line": {"color": color, "width": 4},
-                "thickness": 0.75,
+                "line": {"color": color, "width": 5},
+                "thickness": 0.80,
                 "value": score,
             },
         },
     ))
     fig.update_layout(
-        height=280,
-        margin=dict(t=60, b=10, l=30, r=30),
-        paper_bgcolor="white",
+        height=300,
+        margin=dict(t=70, b=10, l=30, r=30),
+        paper_bgcolor="#0A0E1A",
+        font={"color": "#E8EAF0"},
     )
     return fig

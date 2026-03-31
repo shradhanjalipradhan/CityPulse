@@ -6,6 +6,7 @@ Navigation to Real-Time Anomaly Alert via sidebar.
 
 import sys
 from pathlib import Path
+from typing import Optional
 
 # Ensure streamlit_app/ is on sys.path so components/utils are importable
 sys.path.insert(0, str(Path(__file__).parent))
@@ -24,6 +25,84 @@ st.set_page_config(
 from components.city_sidebar import render_sidebar, FSM_DOT
 from components.gauge_chart import render_gauge, score_label, score_color
 from utils.redis_reader import get_all_city_states, get_latest_reading
+
+# ── Dark Theme CSS ─────────────────────────────────────────────────────────────
+
+_CSS = """
+<style>
+/* Header banner */
+.cp-header {
+    background: linear-gradient(135deg, #0A0E1A 0%, #141B2D 60%, #0D1525 100%);
+    border-left: 4px solid #00D4FF;
+    border-radius: 8px;
+    padding: 16px 24px 12px;
+    margin-bottom: 8px;
+}
+.cp-header h1 {
+    color: #00D4FF;
+    margin: 0 0 4px;
+    font-size: 28px;
+    letter-spacing: 1px;
+}
+.cp-header p {
+    color: #8892A4;
+    margin: 0;
+    font-size: 13px;
+}
+
+/* FSM state badges */
+.fsm-badge {
+    display: inline-block;
+    padding: 4px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}
+.fsm-NORMAL    { background: rgba(0,255,136,0.12); color:#00FF88; border:1px solid #00FF88;
+                  box-shadow: 0 0 8px rgba(0,255,136,0.25); }
+.fsm-SUSPICIOUS{ background: rgba(255,184,0,0.12);  color:#FFB800; border:1px solid #FFB800;
+                  box-shadow: 0 0 8px rgba(255,184,0,0.25); }
+.fsm-ALERT     { background: rgba(255,107,53,0.12); color:#FF6B35; border:1px solid #FF6B35;
+                  box-shadow: 0 0 8px rgba(255,107,53,0.25); }
+.fsm-CONFIRMED { background: rgba(255,51,102,0.15); color:#FF3366; border:1px solid #FF3366;
+                  box-shadow: 0 0 8px rgba(255,51,102,0.30); }
+
+/* AI Reasoning box */
+.cp-reasoning {
+    background: #141B2D;
+    border-left: 3px solid #00D4FF;
+    border-radius: 6px;
+    padding: 14px 18px;
+    color: #E8EAF0;
+    font-style: italic;
+    font-size: 15px;
+    line-height: 1.6;
+}
+
+/* Dark metric cards */
+[data-testid="stMetric"] {
+    background: #141B2D;
+    border: 1px solid #1E2740;
+    border-radius: 8px;
+    padding: 12px 16px !important;
+}
+[data-testid="stMetricLabel"] { color: #8892A4 !important; font-size: 12px; }
+[data-testid="stMetricValue"] { color: #E8EAF0 !important; }
+[data-testid="stMetricDelta"] { font-size: 11px; }
+
+/* Section headers */
+.cp-section {
+    color: #00D4FF;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    margin: 12px 0 4px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #1E2740;
+}
+</style>
+"""
 
 
 # ── AI Reasoning Generator ────────────────────────────────────────────────────
@@ -80,13 +159,12 @@ def _generate_reasoning(
     return f"{s1} {aq} {rec}"
 
 
-# ── Optional typing import ────────────────────────────────────────────────────
-from typing import Optional
-
-
 # ── Main Page ─────────────────────────────────────────────────────────────────
 
 def main() -> None:
+    # Inject dark CSS
+    st.markdown(_CSS, unsafe_allow_html=True)
+
     # Sidebar — always rendered first
     all_states = get_all_city_states()
     city = render_sidebar(all_states)
@@ -96,10 +174,13 @@ def main() -> None:
     reading = get_latest_reading(city)
 
     # ── Header ────────────────────────────────────────────────────────────────
-    st.markdown("## Smart Visit Scorer")
-    st.caption(
-        "Powered by LSTM Autoencoder anomaly detection · "
-        "Updated every 5 minutes via Kafka pipeline"
+    st.markdown(
+        f"<div class='cp-header'>"
+        f"<h1>🏔️ CityPulse Switzerland</h1>"
+        f"<p>Smart Visit Scorer · Powered by LSTM Autoencoder anomaly detection · "
+        f"Updated every 5 minutes via Kafka pipeline</p>"
+        f"</div>",
+        unsafe_allow_html=True,
     )
 
     if state is None:
@@ -109,11 +190,11 @@ def main() -> None:
         )
         st.stop()
 
-    visit_score = int(state.get("visit_score") or 0)
-    fsm_state   = state.get("fsm_state", "NORMAL")
+    visit_score   = int(state.get("visit_score") or 0)
+    fsm_state     = state.get("fsm_state", "NORMAL")
     anomaly_score = state.get("anomaly_score")
-    threshold   = state.get("threshold")
-    last_ts     = state.get("timestamp", "")
+    threshold     = state.get("threshold")
+    last_ts       = state.get("timestamp", "")
 
     # ── Gauge ─────────────────────────────────────────────────────────────────
     col_gauge, col_info = st.columns([1, 1])
@@ -131,7 +212,7 @@ def main() -> None:
 
     # ── Sensor Metrics ────────────────────────────────────────────────────────
     with col_info:
-        st.markdown("### Current Conditions")
+        st.markdown("<div class='cp-section'>Current Conditions</div>", unsafe_allow_html=True)
 
         temp  = reading.get("temperature_c")  if reading else None
         hum   = reading.get("humidity_pct")   if reading else None
@@ -172,14 +253,17 @@ def main() -> None:
         st.divider()
 
         # FSM State Badge
-        dot = FSM_DOT.get(fsm_state, "⚪")
         fsm_meaning = {
             "NORMAL":    "All sensors within baseline — no anomalies",
             "SUSPICIOUS":"One anomalous window detected",
             "ALERT":     "3+ consecutive anomalous windows",
             "CONFIRMED": "Sustained anomaly — significant event",
         }
-        st.markdown(f"**Anomaly State:** {dot} `{fsm_state}`")
+        st.markdown(
+            f"<b style='color:#8892A4;'>Anomaly State:</b>&nbsp;"
+            f"<span class='fsm-badge fsm-{fsm_state}'>{fsm_state}</span>",
+            unsafe_allow_html=True,
+        )
         st.caption(fsm_meaning.get(fsm_state, ""))
 
         if anomaly_score is not None and threshold is not None:
@@ -193,8 +277,11 @@ def main() -> None:
     reasoning = _generate_reasoning(
         city, visit_score, fsm_state, temp, hum, wind, pm25
     )
-    st.markdown("### AI Reasoning")
-    st.info(f'"{reasoning}"')
+    st.markdown("<div class='cp-section'>AI Reasoning</div>", unsafe_allow_html=True)
+    st.markdown(
+        f"<div class='cp-reasoning'>\"{reasoning}\"</div>",
+        unsafe_allow_html=True,
+    )
 
     # ── Footer ────────────────────────────────────────────────────────────────
     st.divider()
