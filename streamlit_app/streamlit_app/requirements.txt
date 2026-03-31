@@ -1,0 +1,6 @@
+streamlit==1.29.0
+plotly==5.18.0
+supabase==2.3.0
+requests==2.31.0
+pandas==2.1.0
+numpy==1.26.0
