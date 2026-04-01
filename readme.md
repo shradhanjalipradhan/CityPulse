@@ -6,6 +6,7 @@
 [![HuggingFace](https://img.shields.io/badge/Inference_API-HuggingFace_Spaces-FFD21E?style=for-the-badge&logo=huggingface)](https://huggingface.co/spaces/shradhanjalipradhan/citypulse-inference)
 [![GitHub](https://img.shields.io/badge/Code-GitHub-181717?style=for-the-badge&logo=github)](https://github.com/shradhanjalipradhan/CityPulse)
 [![CI](https://img.shields.io/github/actions/workflow/status/shradhanjalipradhan/CityPulse/ci.yml?style=for-the-badge&label=CI)](https://github.com/shradhanjalipradhan/CityPulse/actions)
+![System Architecture](https://raw.githubusercontent.com/shradhanjalipradhan/CityPulse/master/Real-Time%20Air%20Quality-2026-04-01-041645.png)
 
 ---
 
