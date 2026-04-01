@@ -305,6 +305,46 @@ def main() -> None:
         if st.button("Refresh Now", use_container_width=True):
             st.rerun()
 
+    # ── About this project ────────────────────────────────────────────────────
+    with st.expander("About this project"):
+        st.markdown(
+            """
+            **CityPulse Switzerland** is a production-grade real-time anomaly detection platform
+            for 8 Swiss cities, built in 4 days as an end-to-end MLOps showcase.
+
+            | Layer | Technology |
+            |-------|-----------|
+            | Data ingestion | Kafka (Redpanda Cloud) + Open-Meteo + OpenAQ |
+            | Orchestration | Apache Airflow (Docker) — 5-min schedule |
+            | ML models | LSTM Autoencoder (PyTorch) — 1 model per city |
+            | Model serving | HuggingFace Spaces (FastAPI) |
+            | Hot storage | Upstash Redis REST API — FSM state + latest reading |
+            | Cold storage | Supabase PostgreSQL — full time series history |
+            | Dashboard | Streamlit Cloud — this app |
+            | Monitoring | Grafana Cloud + model drift detection (PSI) |
+
+            **How the Visit Score works:**
+            Each city runs an LSTM Autoencoder trained on 30 days of normal weather + air quality data.
+            The reconstruction error (anomaly score) feeds a Finite State Machine (NORMAL → SUSPICIOUS →
+            ALERT → CONFIRMED). The visit score (0–100) is derived from the FSM state and sensor conditions.
+
+            **Source code:** [github.com/shradhanjalipradhan/CityPulse](https://github.com/shradhanjalipradhan/CityPulse)
+            """
+        )
+
+    # ── Footer ────────────────────────────────────────────────────────────────
+    st.markdown(
+        "<div style='text-align:center;padding:20px 0 8px;color:#8892A4;font-size:12px;'>"
+        "Built by <b style='color:#E8EAF0;'>Shradha Pradhan</b> &nbsp;·&nbsp; "
+        "<a href='https://github.com/shradhanjalipradhan' style='color:#00D4FF;text-decoration:none;'>GitHub</a>"
+        " &nbsp;·&nbsp; "
+        "<a href='https://www.linkedin.com/in/shradhanjalipradhan/' style='color:#00D4FF;text-decoration:none;'>LinkedIn</a>"
+        " &nbsp;·&nbsp; "
+        "<a href='https://github.com/shradhanjalipradhan/CityPulse' style='color:#00D4FF;text-decoration:none;'>Source Code</a>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
 
 if __name__ == "__main__":
     main()

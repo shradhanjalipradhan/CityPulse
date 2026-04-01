@@ -1,0 +1,66 @@
+name: CityPulse CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install test dependencies
+        run: |
+          pip install --upgrade pip
+          pip install pytest pytest-cov requests python-dotenv pandas numpy supabase
+
+      - name: Run unit tests
+        run: pytest tests/ -v --tb=short --ignore=tests/test_kafka_producer.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_URL }}
+          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_TOKEN }}
+          # Kafka tests skipped in CI (require broker connectivity)
+          KAFKA_BOOTSTRAP_SERVERS: "localhost:9092"
+          KAFKA_API_KEY: "ci-key"
+          KAFKA_API_SECRET: "ci-secret"
+          KAFKA_TOPIC_SENSOR: "raw-sensor-data"
+
+      - name: Run Kafka producer tests (mocked)
+        run: pytest tests/test_kafka_producer.py -v --tb=short
+        env:
+          KAFKA_BOOTSTRAP_SERVERS: "localhost:9092"
+          KAFKA_API_KEY: "ci-key"
+          KAFKA_API_SECRET: "ci-secret"
+          KAFKA_TOPIC_SENSOR: "raw-sensor-data"
+          SUPABASE_URL: "https://test.supabase.co"
+          SUPABASE_SERVICE_KEY: "test-service-key"
+          UPSTASH_REDIS_REST_URL: "https://test.upstash.io"
+          UPSTASH_REDIS_REST_TOKEN: "test-token"
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: .coverage
+          if-no-files-found: ignore

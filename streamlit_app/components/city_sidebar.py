@@ -37,6 +37,28 @@ _FSM_SCORE_COLOR = {
 }
 
 
+def _last_pipeline_run(all_states: Dict[str, Optional[Dict]]) -> Optional[str]:
+    """Returns the most recent pipeline timestamp across all cities."""
+    import pandas as pd
+    latest = None
+    for state in all_states.values():
+        if state and state.get("timestamp"):
+            try:
+                ts = pd.to_datetime(state["timestamp"], utc=True)
+                if latest is None or ts > latest:
+                    latest = ts
+            except Exception:
+                pass
+    if latest is None:
+        return None
+    from datetime import datetime, timezone
+    delta = datetime.now(timezone.utc) - latest.to_pydatetime()
+    mins = int(delta.total_seconds() // 60)
+    if mins < 1:
+        return "just now"
+    return f"{mins} min ago"
+
+
 def render_sidebar(all_states: Dict[str, Optional[Dict]]) -> str:
     """Renders the sidebar with city selector and all-cities comparison.
 
@@ -117,5 +139,16 @@ def render_sidebar(all_states: Dict[str, Optional[Dict]]) -> str:
             "</div>",
             unsafe_allow_html=True,
         )
+
+        # Last pipeline run timestamp
+        last_run = _last_pipeline_run(all_states)
+        if last_run:
+            st.divider()
+            st.markdown(
+                f"<div style='font-size:11px;color:#8892A4;'>"
+                f"<span style='color:#00D4FF;'>⏱</span> Last pipeline run: <b>{last_run}</b>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
 
     return selected
