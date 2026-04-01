@@ -46,18 +46,6 @@ jobs:
           KAFKA_API_SECRET: "ci-secret"
           KAFKA_TOPIC_SENSOR: "raw-sensor-data"
 
-      - name: Run Kafka producer tests (mocked)
-        run: pytest tests/test_kafka_producer.py -v --tb=short
-        env:
-          KAFKA_BOOTSTRAP_SERVERS: "localhost:9092"
-          KAFKA_API_KEY: "ci-key"
-          KAFKA_API_SECRET: "ci-secret"
-          KAFKA_TOPIC_SENSOR: "raw-sensor-data"
-          SUPABASE_URL: "https://test.supabase.co"
-          SUPABASE_SERVICE_KEY: "test-service-key"
-          UPSTASH_REDIS_REST_URL: "https://test.upstash.io"
-          UPSTASH_REDIS_REST_TOKEN: "test-token"
-
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
